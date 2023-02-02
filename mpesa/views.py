@@ -31,14 +31,8 @@ class SubmitView(APIView):
         phone_number = data['phone_number']
         amount = data['amount']
 
-        entity_id = 0
-        if data.get('entity_id'):
-            entity_id = data.get('entity_id')
-
-        paybill_account_number = None
-        if data.get('paybill_account_number'):
-            paybill_account_number = data.get('paybill_account_number')
-
+        entity_id = data.get('entity_id') or 0
+        paybill_account_number = data.get('paybill_account_number') or None
         transaction_id = sendSTK(phone_number, amount, entity_id, account_number=paybill_account_number)
         # b2c()
         message = {"status": "ok", "transaction_id": transaction_id}
@@ -76,8 +70,7 @@ class CheckTransaction(APIView):
         data = request.data
         trans_id = data['transaction_id']
         try:
-            transaction = PaymentTransaction.objects.filter(id=trans_id).get()
-            if transaction:
+            if transaction := PaymentTransaction.objects.filter(id=trans_id).get():
                 return JsonResponse({
                     "message": "ok",
                     "finished": transaction.is_finished,
@@ -113,17 +106,16 @@ class RetryTransaction(APIView):
                     "successful": transaction.is_successful
                 },
                     status=200)
-            else:
-                response = sendSTK(
-                    phone_number=transaction.phone_number,
-                    amount=transaction.amount,
-                    orderId=transaction.order_id,
-                    transaction_id=trans_id)
-                return JsonResponse({
-                    "message": "ok",
-                    "transaction_id": response
-                },
-                    status=200)
+            response = sendSTK(
+                phone_number=transaction.phone_number,
+                amount=transaction.amount,
+                orderId=transaction.order_id,
+                transaction_id=trans_id)
+            return JsonResponse({
+                "message": "ok",
+                "transaction_id": response
+            },
+                status=200)
 
         except PaymentTransaction.DoesNotExist:
             return JsonResponse({
@@ -150,9 +142,9 @@ class ConfirmView(APIView):
             for data in metadata:
                 if data.get('Name') == "MpesaReceiptNumber":
                     receipt_number = data.get('Value')
-            transaction = PaymentTransaction.objects.get(
-                checkout_request_id=requestId)
-            if transaction:
+            if transaction := PaymentTransaction.objects.get(
+                checkout_request_id=requestId
+            ):
                 transaction.trans_id = receipt_number
                 transaction.is_finished = True
                 transaction.is_successful = True
@@ -161,9 +153,9 @@ class ConfirmView(APIView):
         else:
             print('unsuccessfull')
             requestId = body.get('stkCallback').get('CheckoutRequestID')
-            transaction = PaymentTransaction.objects.get(
-                checkout_request_id=requestId)
-            if transaction:
+            if transaction := PaymentTransaction.objects.get(
+                checkout_request_id=requestId
+            ):
                 transaction.is_finished = True
                 transaction.is_successful = False
                 transaction.save()
@@ -192,7 +184,7 @@ class ValidateView(APIView):
         request_data = request.data
 
         # Perform your processing here e.g. print it out...
-        print("validate data" + request_data)
+        print(f"validate data{request_data}")
 
         # Prepare the response, assuming no errors have occurred. Any response
         # other than a 0 (zero) for the 'ResultCode' during Validation only means

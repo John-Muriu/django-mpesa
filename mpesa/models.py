@@ -37,7 +37,7 @@ class PaymentTransaction(models.Model):
     content_object = GenericForeignKey('content_type', 'object_id')
 
     def __str__(self):
-        return "{} {}".format(self.phone_number, self.amount)
+        return f"{self.phone_number} {self.amount}"
 
 
 class Wallet(BaseModel):

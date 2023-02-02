@@ -28,13 +28,12 @@ def generate_pass_key():
 
 
 def get_token():
-    api_url = "{}{}".format(SAFARICOM_API, AUTH_URL)
+    api_url = f"{SAFARICOM_API}{AUTH_URL}"
 
     r = requests.get(api_url, auth=HTTPBasicAuth(consumer_key, consumer_secret))
     if r.status_code == 200:
         jonresponse = json.loads(r.content)
-        access_token = jonresponse['access_token']
-        return access_token
+        return jonresponse['access_token']
     elif r.status_code == 400:
         print('Invalid credentials.')
         return False
@@ -52,9 +51,9 @@ def sendSTK(phone_number, amount, orderId=0, transaction_id=None, shortcode=None
     s = code + PASS_KEY + time_now
     encoded = b64encode(s.encode('utf-8')).decode('utf-8')
 
-    api_url = "{}/mpesa/stkpush/v1/processrequest".format(SAFARICOM_API)
+    api_url = f"{SAFARICOM_API}/mpesa/stkpush/v1/processrequest"
     headers = {
-        "Authorization": "Bearer %s" % access_token,
+        "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
     }
 
@@ -62,7 +61,7 @@ def sendSTK(phone_number, amount, orderId=0, transaction_id=None, shortcode=None
     # If account number is set, change transaction type to paybill
     if account_number:
         transaction_type = "CustomerPayBillOnline"
-    elif transaction_type == "CustomerPayBillOnline" and account_number == None:
+    elif transaction_type == "CustomerPayBillOnline" and account_number is None:
         account_number = phone_number
 
     request = {
@@ -74,30 +73,27 @@ def sendSTK(phone_number, amount, orderId=0, transaction_id=None, shortcode=None
         "PartyA": phone_number,
         "PartyB": party_b,
         "PhoneNumber": phone_number,
-        "CallBackURL": "{}/mpesa/confirm/".format(HOST_NAME),
+        "CallBackURL": f"{HOST_NAME}/mpesa/confirm/",
         "AccountReference": account_number or code,
-        "TransactionDesc": "{}".format(phone_number)
+        "TransactionDesc": f"{phone_number}",
     }
 
     print(request)
     response = requests.post(api_url, json=request, headers=headers)
     json_response = json.loads(response.text)
-    if json_response.get('ResponseCode'):
-        if json_response["ResponseCode"] == "0":
-            checkout_id = json_response["CheckoutRequestID"]
-            if transaction_id:
-                transaction = PaymentTransaction.objects.filter(id=transaction_id)
-                transaction.checkout_request_id = checkout_id
-                transaction.save()
-                return transaction.id
-            else:
-                transaction = PaymentTransaction.objects.create(phone_number=phone_number,
-                                                                checkout_request_id=checkout_id,
-                                                                amount=amount, order_id=orderId)
-                transaction.save()
-                return transaction.id
-    else:
+    if not json_response.get('ResponseCode'):
         raise Exception("Error sending MPesa stk push", json_response)
+    if json_response["ResponseCode"] == "0":
+        checkout_id = json_response["CheckoutRequestID"]
+        if transaction_id:
+            transaction = PaymentTransaction.objects.filter(id=transaction_id)
+            transaction.checkout_request_id = checkout_id
+        else:
+            transaction = PaymentTransaction.objects.create(phone_number=phone_number,
+                                                            checkout_request_id=checkout_id,
+                                                            amount=amount, order_id=orderId)
+        transaction.save()
+        return transaction.id
 
 
 def check_payment_status(checkout_request_id, shortcode=None):
@@ -108,9 +104,9 @@ def check_payment_status(checkout_request_id, shortcode=None):
     s = code + PASS_KEY + time_now
     encoded = b64encode(s.encode('utf-8')).decode('utf-8')
 
-    api_url = "{}/mpesa/stkpushquery/v1/query".format(SAFARICOM_API)
+    api_url = f"{SAFARICOM_API}/mpesa/stkpushquery/v1/query"
     headers = {
-        "Authorization": "Bearer %s" % access_token,
+        "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
     }
     request = {
@@ -121,23 +117,25 @@ def check_payment_status(checkout_request_id, shortcode=None):
     }
     response = requests.post(api_url, json=request, headers=headers)
     json_response = json.loads(response.text)
-    if 'ResponseCode' in json_response and json_response["ResponseCode"] == "0":
-        requestId = json_response.get('CheckoutRequestID')
-        transaction = PaymentTransaction.objects.get(
-            checkout_request_id=requestId)
-        if transaction:
-            transaction.is_finished = True
-            transaction.is_successful = True
-            transaction.save()
-
-        result_code = json_response['ResultCode']
-        response_message = json_response['ResultDesc']
-        return {
-            "result_code": result_code,
-            "status": result_code == "0",
-            "finished": transaction.is_finished,
-            "successful": transaction.is_successful,
-            "message": response_message
-        }
-    else:
+    if (
+        'ResponseCode' not in json_response
+        or json_response["ResponseCode"] != "0"
+    ):
         raise Exception("Error checking transaction status", json_response)
+    requestId = json_response.get('CheckoutRequestID')
+    transaction = PaymentTransaction.objects.get(
+        checkout_request_id=requestId)
+    if transaction:
+        transaction.is_finished = True
+        transaction.is_successful = True
+        transaction.save()
+
+    result_code = json_response['ResultCode']
+    response_message = json_response['ResultDesc']
+    return {
+        "result_code": result_code,
+        "status": result_code == "0",
+        "finished": transaction.is_finished,
+        "successful": transaction.is_successful,
+        "message": response_message
+    }
